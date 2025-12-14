@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Foto A4 Br – PDF Híbrido</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  background: #e6e6e6;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+/* TOPO */
+.topbar {
+  height: 70px;
+  background: #c62828;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.logo {
+  font-size: 44px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.25);
+  user-select: none;
+}
+.logo .foto { color: #fff; }
+.logo .a4 { color: #000; margin: 0 6px; }
+.logo .br { color: #2e7d32; }
+/* CONTEÚDO */
+.main {
+  flex: 1;
+  display: flex;
+}
+.preview-area {
+  flex: 1;
+  display: flex;
+  align-items: flex-start; 
+  justify-content: center;
+  padding-top: 8px;
+  background: #dcdcdc;
+  overflow: auto;
+}
+.paper {
+  background: white;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+  border: 2px solid #888;
+  transform: scale(0.85); /* reduz visualização sem mexer nas dimensões internas */
+  transform-origin: top center;
+  display: grid;
+}
+.cell {
+  border: 1px dashed #bbb;
+  overflow: hidden;
+}
+.cell img {
+  width: 100%;
+  height: 100%;
+}
+/* CONTROLES */
+.controls {
+  width: 300px; /* reduzindo levemente para caber melhor */
+  background: #c62828;
+  color: white;
+  padding: 16px;
+  overflow-y: auto;
+}
+.controls h2 {
+  font-size: 18px;
+  margin-top: 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.4);
+  padding-bottom: 4px;
+}
+.controls label {
+  display: block;
+  margin-top: 10px;
+  font-size: 14px;
+}
+.controls input, .controls select {
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px;
+  font-size: 14px;
+}
+.info-box {
+  background: rgba(255,255,255,0.15);
+  padding: 8px;
+  margin-top: 10px;
+  font-size: 14px;
+}
+.btn {
+  margin-top: 14px;
+  width: 100%;
+  padding: 10px;
+  font-size: 16px;
+  background: white;
+  color: #c62828;
+  border: none;
+  cursor: pointer;
+  font-weight: bold;
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">
+    <span class="foto">Foto</span>
+    <span class="a4">A4</span>
+    <span class="br">Br</span>
+  </div>
+</div>
+
+<div class="main">
+  <div class="preview-area"><div id="preview"></div></div>
+
+  <div class="controls">
+    <h2>Página</h2>
+    <label>Orientação
+      <select id="orientation"><option value="portrait">Vertical</option><option value="landscape">Horizontal</option></select>
+    </label>
+    <label>Margem (cm)
+      <input type="number" id="margin" value="1" step="0.1">
+    </label>
+
+    <h2>Grade</h2>
+    <label>Linhas<input type="number" id="rows" value="2" min="1"></label>
+    <label>Colunas<input type="number" id="cols" value="2" min="1"></label>
+    <label>Espaço entre fotos (cm)<input type="number" id="gap" value="0.3" step="0.1"></label>
+
+    <h2>Tamanho da célula</h2>
+    <label>Largura (cm)<input type="number" id="cellWInput" step="0.1" placeholder="auto"></label>
+    <label>Altura (cm)<input type="number" id="cellHInput" step="0.1" placeholder="auto"></label>
+    <div class="info-box" id="cellSize">Automático</div>
+
+    <h2>Fotos</h2>
+    <input type="file" id="images" multiple accept="image/*">
+    <div class="info-box" id="imgCount">0 fotos carregadas</div>
+
+    <h2>Repetições</h2>
+    <div class="info-box" id="repeatBox">Cada foto = 1x</div>
+
+    <h2>Ajuste da foto</h2>
+    <select id="fitMode">
+      <option value="cover">Preencher (corta)</option>
+      <option value="contain">Ajustar (mantém)</option>
+      <option value="stretch">Esticar (força)</option>
+    </select>
+
+    <h2>Exportar</h2>
+    <button class="btn" id="exportPDF">Salvar em PDF (Híbrido)</button>
+  </div>
+</div>
+
+<script>
+const preview = document.getElementById('preview');
+const imagesInput = document.getElementById('images');
+const imgCountBox = document.getElementById('imgCount');
+const cellSizeBox = document.getElementById('cellSize');
+const repeatBox = document.getElementById('repeatBox');
+let images = [];
+let repeats = [];
+
+function cmToPx(cm){ return cm*37.7952755906; }
+
+imagesInput.addEventListener('change',()=>{
+  images = Array.from(imagesInput.files);
+  repeats = images.map(()=>1);
+  imgCountBox.textContent = images.length + ' fotos carregadas';
+  repeatBox.innerHTML = images.map((_,i)=>`Foto ${i+1}: <input type="number" min="1" max="999" value="1" onchange="repeats[${i}]=+this.value||1; render();">`).join('<br>');
+  render();
+});
+
+['orientation','rows','cols','margin','gap','cellWInput','cellHInput','fitMode'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', render);
+});
+
+function expandedImages(){
+  const out=[];
+  images.forEach((img,i)=>{
+    for(let r=0;r<repeats[i];r++) out.push(img);
+  });
+  return out;
+}
+
+function render(){
+  const orientation = document.getElementById('orientation').value;
+  const rows = +document.getElementById('rows').value;
+  const cols = +document.getElementById('cols').value;
+  const margin = +document.getElementById('margin').value;
+  const gap = +document.getElementById('gap').value;
+  const manualW = +document.getElementById('cellWInput').value;
+  const manualH = +document.getElementById('cellHInput').value;
+  const fit = document.getElementById('fitMode').value;
+
+  const pageW = orientation==='portrait'?21:29.7;
+  const pageH = orientation==='portrait'?29.7:21;
+
+  let usableW = pageW - margin*2 - gap*(cols-1);
+  let usableH = pageH - margin*2 - gap*(rows-1);
+  let cellW = manualW>0 ? manualW : usableW/cols;
+  let cellH = manualH>0 ? manualH : usableH/rows;
+
+  cellSizeBox.innerHTML = `Largura: ${cellW.toFixed(2)} cm<br>Altura: ${cellH.toFixed(2)} cm`;
+
+  preview.innerHTML='';
+  const paper=document.createElement('div');
+  paper.className='paper';
+  paper.style.width=cmToPx(pageW)+'px';
+  paper.style.height=cmToPx(pageH)+'px';
+  paper.style.padding=cmToPx(margin)+'px';
+  paper.style.gap=cmToPx(gap)+'px';
+  paper.style.gridTemplateColumns=`repeat(${cols}, ${cmToPx(cellW)}px)`;
+  paper.style.gridTemplateRows=`repeat(${rows}, ${cmToPx(cellH)}px)`;
+
+  const imgs = expandedImages();
+  for(let i=0;i<rows*cols;i++){
+    const cell=document.createElement('div');
+    cell.className='cell';
+    if(imgs[i]){
+      const img=document.createElement('img');
+      img.src = URL.createObjectURL(imgs[i]);
+      img.style.objectFit = fit==='stretch'?'fill':fit;
+      cell.appendChild(img);
+    }
+    paper.appendChild(cell);
+  }
+  preview.appendChild(paper);
+}
+
+render();
+
+document.getElementById('exportPDF').onclick = async ()=>{
+  const { jsPDF } = window.jspdf;
+  const orientation = document.getElementById('orientation').value;
+  const rows = +document.getElementById('rows').value;
+  const cols = +document.getElementById('cols').value;
+  const margin = +document.getElementById('margin').value;
+  const gap = +document.getElementById('gap').value;
+  const manualW = +document.getElementById('cellWInput').value;
+  const manualH = +document.getElementById('cellHInput').value;
+  const fit = document.getElementById('fitMode').value;
+
+  const pageW = orientation==='portrait'?21:29.7;
+  const pageH = orientation==='portrait'?29.7:21;
+
+  const cellW = manualW>0 ? manualW : (pageW - margin*2 - gap*(cols-1))/cols;
+  const cellH = manualH>0 ? manualH : (pageH - margin*2 - gap*(rows-1))/rows;
+
+  const imgs = expandedImages();
+
+  let x = margin, y = margin;
+  const pdf = new jsPDF({orientation, unit:'cm', format:'a4'});
+
+  for(let i=0;i<rows*cols;i++){
+    if(imgs[i]){
+      const img = new Image();
+      img.src = URL.createObjectURL(imgs[i]);
+      await new Promise(res=>img.onload=res);
+      let iw = img.width, ih = img.height;
+      let rw = cellW, rh = cellH;
+      if(fit==='contain'){
+        const ratio = Math.min(cellW/iw, cellH/ih);
+        rw = iw*ratio;
+        rh = ih*ratio;
+      }
+      const ix = x + (cellW - rw)/2;
+      const iy = y + (cellH - rh)/2;
+      pdf.addImage(img, 'PNG', ix, iy, rw, rh);
+    }
+    x += cellW + gap;
+    if((i+1)%cols===0){ x=margin; y+=cellH + gap; }
+  }
+  pdf.save('foto-a4-hibrido.pdf');
+};
+</script>
+
+</body>
+</html>
